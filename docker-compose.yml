@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  multidocker:
+    image: ycasti9922/multi_docker_sync:1.0.1
+    container_name: multidocker-sync
+    restart: unless-stopped
+    ports:
+      - "8089:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
