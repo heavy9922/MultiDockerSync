@@ -1,6 +1,8 @@
+import json
 from fastapi import APIRouter
 from app.config import docker_endpoints
 from app.services.docker_service import connect_to_docker, get_containers_from_endpoint
+from app.utils.docker_client import clean_container_name
 
 router = APIRouter()
 
@@ -9,38 +11,40 @@ async def list_containers():
     routers = {}
     services = {}
     containers = []
-
+    
     for endpoint in docker_endpoints:
         client = connect_to_docker(endpoint)
         if client:
             containers.extend(get_containers_from_endpoint(client, endpoint["host"]))
-    
-    # print(f"DEBUG: Contenedores obtenidos: {containers}")
 
     for container in containers:
+        original_name = container["name"]
+        cleaned_name = clean_container_name(original_name)
+
         labels = container.get("labels", {})
-        if labels.get("traefik.enable") == "true":
-            rule = labels.get(f"traefik.http.routers.{container['name']}.rule")
-            port = labels.get(f"traefik.http.services.{container['name']}.loadbalancer.server.port")
+        traefik_labels = {key: value for key, value in labels.items() if key.startswith("traefik.")}
+
+        # Depuración
+        # print(f"DEBUG: {original_name} -> {cleaned_name}")
+        # print(json.dumps(traefik_labels, indent=4))
+
+        if traefik_labels.get("traefik.enable") == "true":
+            rule = traefik_labels.get(f"traefik.http.routers.{cleaned_name}.rule")
+            port = traefik_labels.get(f"traefik.http.services.{cleaned_name}.loadbalancer.server.port")
             host = container["host"]
 
-            # print(f"DEBUG: Procesando contenedor {container['name']} con etiquetas: {labels}")
-
             if rule and port:
-                routers[container["name"]] = {
+                routers[cleaned_name] = {
                     "rule": rule,
                     "entryPoints": ["web"],
-                    "service": container["name"]
+                    "service": cleaned_name
                 }
-                services[container["name"]] = {
+                services[cleaned_name] = {
                     "loadBalancer": {
                         "servers": [
                             {"url": f"http://{host}:{port}"}
                         ]
                     }
                 }
-
-    # print(f"DEBUG: Routers generados: {routers}")
-    # print(f"DEBUG: Services generados: {services}")
 
     return {"http": {"routers": routers, "services": services}}
